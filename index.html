@@ -30,8 +30,8 @@
     #toast { position: fixed; top: 20px; right: 20px; background: rgba(40,167,69,0.95); color: white; padding: 14px 20px; border-radius: 8px; z-index: 4000; font-weight: bold; font-size: 14px; transform: translateX(150%); transition: transform 0.4s ease-out; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
     #toast.show { transform: translateX(0); }
 
-    /* 🌟 グローバルステータスバー (pointer-events: none を追加してクリック貫通) */
-    #global-status-bar { position: fixed; top: 0; left: 0; width: 100vw; background: #0056b3; color: white; text-align: center; padding: 10px 0; font-size: 14px; font-weight: bold; z-index: 5000; box-shadow: 0 2px 5px rgba(0,0,0,0.3); display: none; pointer-events: none; }
+    /* 🌟 グローバルステータスバー (z-indexを下げ、クリックを貫通させる) */
+    #global-status-bar { position: fixed; top: 0; left: 0; width: 100vw; background: #0056b3; color: white; text-align: center; padding: 10px 0; font-size: 14px; font-weight: bold; z-index: 1500; box-shadow: 0 2px 5px rgba(0,0,0,0.3); display: none; pointer-events: none; }
 
     /* ==========================================
        2. モーダル・パネル (OP, Settings, Guide)
@@ -314,6 +314,11 @@
 
       <div class="admin-only-setting">
         <div style="font-size:12px; color:#dc3545; font-weight:bold; margin-bottom:10px;">🔒 管理者専用メニュー</div>
+
+        <!-- 🌟 ピン表示の最小ズームレベル設定 -->
+        <label class="settings-row" style="margin-bottom: 15px; font-weight:normal; font-size:14px;">
+          ピン表示の最小ズーム: <input type="number" id="min-zoom-input" style="width:50px; margin-left:10px; text-align:center;" min="1" max="22">
+        </label>
         
         <button type="button" id="share-cloud-btn" class="btn" style="background:#28a745; margin-bottom:8px;">☁️ クラウドへ一括共有</button>
         <button type="button" id="export-btn" class="btn" style="background:#ffc107; color:#333; margin-bottom:15px;">📥 ZIPをローカル保存</button>
@@ -445,7 +450,8 @@
         showAddPinBtn: true,
         showHouseLabel: false,
         largeTextMode: false,
-        highContrast: false
+        highContrast: false,
+        minZoomForPins: 14 // 🌟 追加（初期値）
       },
       load() {
         const saved = localStorage.getItem('appSettings');
@@ -467,6 +473,9 @@
         
         $('toggle-high-contrast').checked = this.data.highContrast;
         document.body.classList.toggle('high-contrast', this.data.highContrast);
+
+        const zoomInput = $('min-zoom-input');
+        if (zoomInput) zoomInput.value = this.data.minZoomForPins;
       }
     };
 
@@ -554,9 +563,6 @@
         const records = await this.getAllRecords();
         State.surveyedHouses = {};
         records.forEach(r => { if (r.type === "new") State.surveyedHouses[r.house_id] = r; });
-        const unexported = records.filter(r => !r.exported).length;
-        $('share-cloud-btn').textContent = `☁️ クラウドへ一括共有 (未出力: ${unexported}件)`;
-        $('export-btn').textContent = `📥 ZIPをローカル保存 (未出力: ${unexported}件)`;
         MapManager.applyFilter();
       },
       saveRecord(data) {
@@ -657,6 +663,9 @@
         }).addTo(this.map);
 
         this.loadedGeoJsonLayer = L.featureGroup().addTo(this.map);
+
+        // 🌟 ズームレベル変更時にピンの表示/非表示を更新
+        this.map.on('zoomend', () => this.applyFilter());
       },
 
       getPinIcon(color) {
@@ -680,6 +689,9 @@
 
       applyFilter() {
         const filterVal = $('pin-filter').value;
+        const currentZoom = this.map.getZoom(); // 🌟 現在のズームレベルを取得
+        const minZoom = AppSettings.data.minZoomForPins; // 🌟 設定値を取得
+
         State.allFeatures.forEach(l => {
           let color = '#007bff';
           if (String(l.houseId).startsWith("新規_")) color = '#ff9800';
@@ -694,6 +706,9 @@
           let show = true;
           if (filterVal === 'uncompleted' && isCompleted) show = false;
           if (filterVal === 'completed' && !isCompleted) show = false;
+          
+          // 🌟 ズームレベルが規定値未満なら非表示にする
+          if (currentZoom < minZoom) show = false;
 
           if (show) { if (!this.map.hasLayer(l)) this.map.addLayer(l); }
           else { if (this.map.hasLayer(l)) this.map.removeLayer(l); }
@@ -1274,38 +1289,41 @@
           } else alert("初期設定を行ってください。");
         });
         
-        // Settings Toggles (AppSettings連携)
+        // Settings Toggles 
         $('toggle-gps-btn').addEventListener('change', e => {
-          AppSettings.data.showGpsBtn = e.target.checked;
-          AppSettings.save();
+          AppSettings.data.showGpsBtn = e.target.checked; AppSettings.save();
           $('gps-btn').style.display = e.target.checked ? 'flex' : 'none';
         });
         $('toggle-add-pin-btn').addEventListener('change', e => {
-          AppSettings.data.showAddPinBtn = e.target.checked;
-          AppSettings.save();
+          AppSettings.data.showAddPinBtn = e.target.checked; AppSettings.save();
           $('add-pin-btn').style.display = e.target.checked ? 'flex' : 'none';
         });
         $('toggle-house-label').addEventListener('change', e => {
-          AppSettings.data.showHouseLabel = e.target.checked;
-          AppSettings.save();
+          AppSettings.data.showHouseLabel = e.target.checked; AppSettings.save();
           MapManager.toggleHouseLabels(e.target.checked);
         });
-
         $('text-size-toggle').addEventListener('change', e => {
-          AppSettings.data.largeTextMode = e.target.checked;
-          AppSettings.save();
+          AppSettings.data.largeTextMode = e.target.checked; AppSettings.save();
           document.body.classList.toggle('large-text', e.target.checked);
           if(!e.target.checked) {
-             AppSettings.data.highContrast = false;
-             AppSettings.save();
+             AppSettings.data.highContrast = false; AppSettings.save();
              document.body.classList.remove('high-contrast'); 
           }
         });
-        
         $('toggle-high-contrast').addEventListener('change', e => {
-          AppSettings.data.highContrast = e.target.checked;
-          AppSettings.save();
+          AppSettings.data.highContrast = e.target.checked; AppSettings.save();
           document.body.classList.toggle('high-contrast', e.target.checked);
+        });
+
+        // 🌟 追加: ピン表示の最小ズームレベル設定
+        $('min-zoom-input').addEventListener('change', e => {
+          let val = parseInt(e.target.value, 10);
+          if (isNaN(val) || val < 1) val = 1;
+          if (val > 22) val = 22;
+          e.target.value = val;
+          AppSettings.data.minZoomForPins = val;
+          AppSettings.save();
+          MapManager.applyFilter();
         });
 
         $('import-backup-input').addEventListener('change', e => {
