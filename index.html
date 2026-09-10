@@ -30,8 +30,8 @@
     #toast { position: fixed; top: 20px; right: 20px; background: rgba(40,167,69,0.95); color: white; padding: 14px 20px; border-radius: 8px; z-index: 4000; font-weight: bold; font-size: 14px; transform: translateX(150%); transition: transform 0.4s ease-out; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
     #toast.show { transform: translateX(0); }
 
-    /* 🌟 グローバルステータスバー */
-    #global-status-bar { position: fixed; top: 0; left: 0; width: 100vw; background: #0056b3; color: white; text-align: center; padding: 10px 0; font-size: 14px; font-weight: bold; z-index: 5000; box-shadow: 0 2px 5px rgba(0,0,0,0.3); display: none; }
+    /* 🌟 グローバルステータスバー (pointer-events: none を追加してクリック貫通) */
+    #global-status-bar { position: fixed; top: 0; left: 0; width: 100vw; background: #0056b3; color: white; text-align: center; padding: 10px 0; font-size: 14px; font-weight: bold; z-index: 5000; box-shadow: 0 2px 5px rgba(0,0,0,0.3); display: none; pointer-events: none; }
 
     /* ==========================================
        2. モーダル・パネル (OP, Settings, Guide)
@@ -254,7 +254,7 @@
     </div>
     <hr style="margin: 10px 0; border: 0; border-top: 1px solid #ccc;">
 
-    <button type="button" id="share-backup-btn" class="btn" style="background:#6f42c1;">📦 調査状況をまるごと共有</button>
+    <button type="button" id="share-backup-btn" class="btn" style="background:#6f42c1;">📦 調査状況をまるごとダウンロード</button>
   </div>
 
   <!-- 設定画面（モーダル） -->
@@ -554,6 +554,9 @@
         const records = await this.getAllRecords();
         State.surveyedHouses = {};
         records.forEach(r => { if (r.type === "new") State.surveyedHouses[r.house_id] = r; });
+        const unexported = records.filter(r => !r.exported).length;
+        $('share-cloud-btn').textContent = `☁️ クラウドへ一括共有 (未出力: ${unexported}件)`;
+        $('export-btn').textContent = `📥 ZIPをローカル保存 (未出力: ${unexported}件)`;
         MapManager.applyFilter();
       },
       saveRecord(data) {
@@ -1221,6 +1224,13 @@
         }
       },
 
+      downloadFile(blob, fileName) {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = fileName;
+        a.click();
+      },
+
       bindEvents() {
         // OP Screen
         $('search-city-btn').addEventListener('click', this.handleCitySearch.bind(this));
@@ -1229,24 +1239,12 @@
         
         // Control Panel
         $('pin-filter').addEventListener('change', () => MapManager.applyFilter());
+
         $('share-backup-btn').addEventListener('click', async () => {
           const zipData = await DataManager.generateBackupZip();
           if (!zipData) return;
-          const file = new File([zipData.blob], zipData.fileName, { type: "application/zip" });
-          if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            try {
-              await navigator.share({ title: '空き家調査_状況バックアップ', text: `【送信日時: ${new Date().toLocaleString("ja-JP")}】\n調査端末のバックアップデータです。`, files: [file] });
-              Utils.showToast("✅ バックアップを共有しました");
-            } catch (err) { 
-              if (err.name !== 'AbortError') {
-                UIManager.downloadFile(zipData.blob, zipData.fileName);
-                alert("共有機能が中断されたため、直接ダウンロードを実行しました。");
-              }
-            }
-          } else {
-            UIManager.downloadFile(zipData.blob, zipData.fileName);
-            alert("標準機能でダウンロードを実行しました。");
-          }
+          this.downloadFile(zipData.blob, zipData.fileName);
+          Utils.showToast("✅ バックアップをダウンロードしました");
         });
         
         // Map Floating Buttons
@@ -1471,7 +1469,7 @@
             DataManager.markAsExported(zipData.recordsToExport);
           } catch (err) { 
              if (err.name !== 'AbortError') {
-               UIManager.downloadFile(zipData.blob, zipData.fileName);
+               this.downloadFile(zipData.blob, zipData.fileName);
                alert("共有機能が中断されたため、直接ダウンロードを実行しました。");
                DataManager.markAsExported(zipData.recordsToExport);
              }
@@ -1488,13 +1486,6 @@
         if (!zipData) return alert("出力する未出力データがありません。");
         this.downloadFile(zipData.blob, zipData.fileName);
         DataManager.markAsExported(zipData.recordsToExport);
-      },
-
-      downloadFile(blob, fileName) {
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = fileName;
-        a.click();
       },
 
       openPanel(houseId, shpProps, reportProps) {
