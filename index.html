@@ -373,7 +373,7 @@
       APP_STATE_STORE: "appState", 
       ADMIN_PASSWORD: "123",
       MAP_MAX_ZOOM: 22,
-      DL_ZOOM_LEVELS: [14, 15, 16, 17],
+      DL_ZOOM_LEVELS: [14, 15, 16, 17, 18],
       DL_OFFSET: 0.08,
       DEFAULT_CENTER: [35.689, 139.691],
       IMAGE_MAX_SIZE: 1280
@@ -554,9 +554,6 @@
         const records = await this.getAllRecords();
         State.surveyedHouses = {};
         records.forEach(r => { if (r.type === "new") State.surveyedHouses[r.house_id] = r; });
-        const unexported = records.filter(r => !r.exported).length;
-        $('share-cloud-btn').textContent = `☁️ クラウドへ一括共有 (未出力: ${unexported}件)`;
-        $('export-btn').textContent = `📥 ZIPをローカル保存 (未出力: ${unexported}件)`;
         MapManager.applyFilter();
       },
       saveRecord(data) {
@@ -1080,7 +1077,6 @@
           else { unmatch++; l.hasReport = false; }
         });
         MapManager.applyFilter();
-        $('status-msg').innerHTML = `<span style="color:#28a745;">🟢 報告書あり: ${match}件</span><br><span style="color:#dc3545;">🔴 報告書なし: ${unmatch}件</span>`;
       },
 
       async generateSurveyZip() {
@@ -1241,9 +1237,14 @@
             try {
               await navigator.share({ title: '空き家調査_状況バックアップ', text: `【送信日時: ${new Date().toLocaleString("ja-JP")}】\n調査端末のバックアップデータです。`, files: [file] });
               Utils.showToast("✅ バックアップを共有しました");
-            } catch (err) { }
+            } catch (err) { 
+              if (err.name !== 'AbortError') {
+                UIManager.downloadFile(zipData.blob, zipData.fileName);
+                alert("共有機能が中断されたため、直接ダウンロードを実行しました。");
+              }
+            }
           } else {
-            this.downloadFile(zipData.blob, zipData.fileName);
+            UIManager.downloadFile(zipData.blob, zipData.fileName);
             alert("標準機能でダウンロードを実行しました。");
           }
         });
@@ -1275,31 +1276,37 @@
           } else alert("初期設定を行ってください。");
         });
         
-        // Settings Toggles 
+        // Settings Toggles (AppSettings連携)
         $('toggle-gps-btn').addEventListener('change', e => {
-          AppSettings.data.showGpsBtn = e.target.checked; AppSettings.save();
+          AppSettings.data.showGpsBtn = e.target.checked;
+          AppSettings.save();
           $('gps-btn').style.display = e.target.checked ? 'flex' : 'none';
         });
         $('toggle-add-pin-btn').addEventListener('change', e => {
-          AppSettings.data.showAddPinBtn = e.target.checked; AppSettings.save();
+          AppSettings.data.showAddPinBtn = e.target.checked;
+          AppSettings.save();
           $('add-pin-btn').style.display = e.target.checked ? 'flex' : 'none';
         });
         $('toggle-house-label').addEventListener('change', e => {
-          AppSettings.data.showHouseLabel = e.target.checked; AppSettings.save();
+          AppSettings.data.showHouseLabel = e.target.checked;
+          AppSettings.save();
           MapManager.toggleHouseLabels(e.target.checked);
         });
 
         $('text-size-toggle').addEventListener('change', e => {
-          AppSettings.data.largeTextMode = e.target.checked; AppSettings.save();
+          AppSettings.data.largeTextMode = e.target.checked;
+          AppSettings.save();
           document.body.classList.toggle('large-text', e.target.checked);
           if(!e.target.checked) {
-             AppSettings.data.highContrast = false; AppSettings.save();
+             AppSettings.data.highContrast = false;
+             AppSettings.save();
              document.body.classList.remove('high-contrast'); 
           }
         });
         
         $('toggle-high-contrast').addEventListener('change', e => {
-          AppSettings.data.highContrast = e.target.checked; AppSettings.save();
+          AppSettings.data.highContrast = e.target.checked;
+          AppSettings.save();
           document.body.classList.toggle('high-contrast', e.target.checked);
         });
 
@@ -1353,7 +1360,7 @@
           }
         });
         
-        // Info Panel Photo Input
+        // Info Panel Photo Input Delegation
         $('info-panel').addEventListener('change', e => {
           State.isPanelDirty = true; 
           if (e.target.classList.contains('camera-input')) {
@@ -1462,7 +1469,13 @@
           try {
             await navigator.share({ title: '空き家調査_現場データ', text: `【送信日時: ${new Date().toLocaleString("ja-JP")}】\n現場データです。`, files: [file] });
             DataManager.markAsExported(zipData.recordsToExport);
-          } catch (err) { }
+          } catch (err) { 
+             if (err.name !== 'AbortError') {
+               UIManager.downloadFile(zipData.blob, zipData.fileName);
+               alert("共有機能が中断されたため、直接ダウンロードを実行しました。");
+               DataManager.markAsExported(zipData.recordsToExport);
+             }
+          }
         } else {
           this.downloadFile(zipData.blob, zipData.fileName);
           alert("標準機能でダウンロードを実行しました。");
