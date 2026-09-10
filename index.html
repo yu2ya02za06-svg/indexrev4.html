@@ -641,15 +641,24 @@
             const tile = document.createElement('img');
             const url = this.getTileUrl(coords);
             tile.alt = '';
-            caches.match(url).then(res => {
-              if (res) { res.blob().then(blob => { tile.src = URL.createObjectURL(blob); done(null, tile); }); }
-              else {
-                fetch(url).then(r => {
-                  if (r.ok) caches.open('gsi-tiles-cache').then(cache => cache.put(url, r.clone()));
-                  return r.blob();
-                }).then(blob => { tile.src = URL.createObjectURL(blob); done(null, tile); }).catch(err => done(err, tile));
-              }
-            });
+
+            // 🌟 caches APIが使える環境かどうかをチェック
+            if (typeof caches !== 'undefined') {
+              caches.match(url).then(res => {
+                if (res) { res.blob().then(blob => { tile.src = URL.createObjectURL(blob); done(null, tile); }); }
+                else {
+                  fetch(url).then(r => {
+                    if (r.ok) caches.open('gsi-tiles-cache').then(cache => cache.put(url, r.clone()));
+                    return r.blob();
+                  }).then(blob => { tile.src = URL.createObjectURL(blob); done(null, tile); }).catch(err => done(err, tile));
+                }
+              }).catch(err => done(err, tile));
+            } else {
+              // 🌟 使えない場合（ローカルファイル実行時など）は直接画像を読み込む
+              tile.src = url;
+              tile.onload = () => done(null, tile);
+              tile.onerror = (e) => done(e, tile);
+            }
             return tile;
           }
         });
@@ -688,6 +697,8 @@
       },
 
       applyFilter() {
+        if (!this.map) return; // 🌟 マップ初期化前ならここで処理を止める
+
         const filterVal = $('pin-filter').value;
         const currentZoom = this.map.getZoom(); // 🌟 現在のズームレベルを取得
         const minZoom = AppSettings.data.minZoomForPins; // 🌟 設定値を取得
